@@ -3,12 +3,23 @@ const { google } = require("googleapis");
 
 const app = express();
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = process.env.SHEET_NAME;
-const GMB_URL = process.env.GMB_URL;
 const SERVICE_ACCOUNT_JSON = process.env.SERVICE_ACCOUNT_JSON;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-async function registrarClic(telefono) {
+// Configuración de negocios: se lee desde variables de entorno
+// Formato: NEGOCIO_aojocerrado={"gmb":"https://...","hoja":"NombreHoja"}
+function getConfigNegocio(slug) {
+  const key = `NEGOCIO_${slug}`;
+  const raw = process.env[key];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function registrarClic(telefono, hoja) {
   const credentials = JSON.parse(SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
@@ -20,7 +31,7 @@ async function registrarClic(telefono) {
   });
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:B`,
+    range: `${hoja}!A:B`,
     valueInputOption: "RAW",
     requestBody: {
       values: [[telefono, fechaHora]],
@@ -30,12 +41,25 @@ async function registrarClic(telefono) {
 
 app.get("/r", async (req, res) => {
   const telefono = req.query.tel || "desconocido";
+  const negocio = req.query.negocio;
+
+  if (!negocio) {
+    return res.status(400).send("Parámetro negocio requerido");
+  }
+
+  const config = getConfigNegocio(negocio);
+
+  if (!config) {
+    return res.status(404).send("Negocio no encontrado");
+  }
+
   try {
-    await registrarClic(telefono);
+    await registrarClic(telefono, config.hoja);
   } catch (err) {
     console.error("Error registrando clic:", err.message);
   }
-  res.redirect(GMB_URL);
+
+  res.redirect(config.gmb);
 });
 
 app.get("/health", (req, res) => res.send("OK"));
