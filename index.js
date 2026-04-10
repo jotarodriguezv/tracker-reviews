@@ -6,8 +6,6 @@ const app = express();
 const SERVICE_ACCOUNT_JSON = process.env.SERVICE_ACCOUNT_JSON;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-// Configuración de negocios: se lee desde variables de entorno
-// Formato: NEGOCIO_aojocerrado={"gmb":"https://...","hoja":"NombreHoja"}
 function getConfigNegocio(slug) {
   const key = `NEGOCIO_${slug}`;
   const raw = process.env[key];
@@ -19,22 +17,61 @@ function getConfigNegocio(slug) {
   }
 }
 
-async function registrarClic(telefono, hoja) {
+async function getSheetsClient() {
   const credentials = JSON.parse(SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-  const sheets = google.sheets({ version: "v4", auth });
-  const fechaHora = new Date().toLocaleString("es-CO", {
+  return google.sheets({ version: "v4", auth });
+}
+
+function getFechaHora() {
+  return new Date().toLocaleString("es-CO", {
     timeZone: "America/Bogota",
   });
-  await sheets.spreadsheets.values.append({
+}
+
+async function registrarClic(telefono, hoja) {
+  const sheets = await getSheetsClient();
+
+  // Leer todas las filas para encontrar la del teléfono
+  const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${hoja}!A:B`,
+    range: `${hoja}!A:C`,
+  });
+
+  const filas = response.data.values || [];
+
+  // Buscar la última fila con ese teléfono que no tenga fecha_clic
+  let filaIndex = -1;
+  for (let i = filas.length - 1; i >= 1; i--) {
+    if (filas[i][0] === telefono && !filas[i][2]) {
+      filaIndex = i + 1; // +1 porque Sheets es 1-indexed
+      break;
+    }
+  }
+
+  if (filaIndex === -1) {
+    // No encontró fila pendiente, hace append como fallback
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${hoja}!A:C`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[telefono, "", getFechaHora()]],
+      },
+    });
+    return;
+  }
+
+  // Actualizar solo la columna C (Fecha_Clic) de esa fila
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${hoja}!C${filaIndex}`,
     valueInputOption: "RAW",
     requestBody: {
-      values: [[telefono, fechaHora]],
+      values: [[getFechaHora()]],
     },
   });
 }
