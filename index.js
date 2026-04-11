@@ -77,7 +77,7 @@ async function registrarClic(telefono, hoja) {
 }
 
 app.get("/r", async (req, res) => {
-  const telefono = req.query.tel || "desconocido";
+  const telefono = (req.query.tel || "desconocido").replace(/\s+/g, '').replace(/^\+/, '');
   const negocio = req.query.negocio;
 
   if (!negocio) {
